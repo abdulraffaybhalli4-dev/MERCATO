@@ -1,0 +1,17 @@
+{
+  "name": "mercato-nero",
+  "private": true,
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm --workspace server run dev",
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "bot": "npm --workspace server run bot",
+    "start": "npm --workspace server run start",
+    "build:web": "npm --workspace web run build",
+    "preview:web": "npm --workspace web run preview"
+  }
+}
