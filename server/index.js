@@ -15,6 +15,9 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const port = process.env.PORT || 4000;
+const adminUser = process.env.ADMIN_USER;
+const adminPass = process.env.ADMIN_PASS;
+const activeUsers = new Map();
 
 app.use(express.static(path.join(__dirname, "../web/dist")));
 
@@ -38,12 +41,31 @@ app.use(
   })
 );
 
+function recordActiveUser(user) {
+  if (!user?.id) return;
+  activeUsers.set(String(user.id), {
+    id: String(user.id),
+    username: user.username || "Unknown",
+    lastSeen: new Date().toISOString()
+  });
+}
+
+app.use((req, res, next) => {
+  if (req.session?.user?.allowed) {
+    recordActiveUser(req.session.user);
+  }
+  next();
+});
+
 const publicPaths = new Set([
   "/api/health",
   "/api/auth/login",
   "/api/auth/callback",
   "/api/auth/me",
-  "/api/auth/logout"
+  "/api/auth/logout",
+  "/api/admin/login",
+  "/api/admin/me",
+  "/api/admin/logout"
 ]);
 
 const botToken = process.env.BOT_API_TOKEN;
@@ -51,6 +73,10 @@ const botToken = process.env.BOT_API_TOKEN;
 app.use((req, res, next) => {
   if (!req.path.startsWith("/api")) return next();
   if (publicPaths.has(req.path)) return next();
+  if (req.path.startsWith("/api/admin")) {
+    if (req.session?.admin?.loggedIn) return next();
+    return res.status(401).json({ error: "admin unauthorized" });
+  }
   if (req.path.startsWith("/api/bot/")) {
     if (botToken && req.headers["x-bot-token"] === botToken) {
       return next();
@@ -289,6 +315,96 @@ app.post("/api/auth/logout", (req, res) => {
   req.session.destroy(() => {
     res.json({ ok: true });
   });
+});
+
+// Admin Dashboard
+app.post("/api/admin/login", (req, res) => {
+  const { username, password } = req.body || {};
+  if (!adminUser || !adminPass) {
+    return res.status(500).json({ error: "admin credentials not configured" });
+  }
+  if (username !== adminUser || password !== adminPass) {
+    return res.status(401).json({ error: "invalid credentials" });
+  }
+  req.session.admin = {
+    username,
+    loggedIn: true,
+    loggedInAt: new Date().toISOString()
+  };
+  res.json({ ok: true, admin: { username } });
+});
+
+app.get("/api/admin/me", (req, res) => {
+  res.json({ admin: req.session?.admin?.loggedIn ? req.session.admin : null });
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  req.session.admin = null;
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/active-users", (req, res) => {
+  const withinMinutes = Number(req.query.withinMinutes ?? 10);
+  const cutoff = Date.now() - (Number.isFinite(withinMinutes) ? withinMinutes : 10) * 60 * 1000;
+  const users = [...activeUsers.values()]
+    .map((u) => ({ ...u, lastSeenMs: new Date(u.lastSeen).getTime() }))
+    .filter((u) => u.lastSeenMs >= cutoff)
+    .sort((a, b) => b.lastSeenMs - a.lastSeenMs)
+    .map(({ lastSeenMs, ...rest }) => rest);
+  res.json({ users });
+});
+
+app.post("/api/admin/reset-orders", async (req, res) => {
+  try {
+    await dbTransaction(async (db) => {
+      db.run("DELETE FROM order_items");
+      db.run("DELETE FROM orders");
+      db.run("INSERT OR REPLACE INTO order_sequence (id, next_number) VALUES (1, 0)");
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/admin/reports", async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) {
+    return res.status(400).json({ error: "from and to required (YYYY-MM-DD)" });
+  }
+
+  const byFamily = await dbAll(
+    `
+      SELECT f.id as familyId, f.name as familyName,
+             COUNT(o.id) as orderCount,
+             COALESCE(SUM(o.total_clean), 0) as totalClean,
+             COALESCE(SUM(o.total_dirty), 0) as totalDirty
+      FROM families f
+      LEFT JOIN orders o
+        ON o.family_id = f.id
+       AND date(o.created_at) BETWEEN date(?) AND date(?)
+      GROUP BY f.id
+      ORDER BY f.name
+    `,
+    [from, to]
+  );
+
+  const totals = await dbGet(
+    `
+      SELECT COUNT(id) as orderCount,
+             COALESCE(SUM(total_clean), 0) as totalClean,
+             COALESCE(SUM(total_dirty), 0) as totalDirty
+      FROM orders
+      WHERE date(created_at) BETWEEN date(?) AND date(?)
+    `,
+    [from, to]
+  );
+
+  res.json({ byFamily, totals });
+});
+
+app.get("/api/admin/logs", (req, res) => {
+  res.json({ logs: [] });
 });
 
 // Families

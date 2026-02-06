@@ -66,6 +66,16 @@ const commands = [
       option.setName("id_ordine").setDescription("ID ordine").setRequired(true)
     )
     .toJSON(),
+  new SlashCommandBuilder()
+    .setName("completa_ordine")
+    .setDescription("Segna un ordine come completato")
+    .addStringOption((option) =>
+      option.setName("id_ordine").setDescription("ID ordine").setRequired(true)
+    )
+    .addStringOption((option) =>
+      option.setName("creatore").setDescription("Nome o tag del creatore").setRequired(false)
+    )
+    .toJSON(),
 ];
 
 const rest = new REST({ version: "10" }).setToken(token);
@@ -95,14 +105,12 @@ client.on("interactionCreate", async (interaction) => {
     if (!["compra", "crea", "cancella"].includes(interaction.commandName)) return;
 
   if (!interaction.member?.roles?.cache?.has(commandRoleId)) {
-    await interaction.reply({ content: "Non hai i permessi", ephemeral: true });
+    await interaction.reply({ content: "Non hai i permessi" });
     return;
   }
-
-  const isPublic = interaction.commandName === "compra";
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ ephemeral: !isPublic });
+      await interaction.deferReply();
     }
   } catch (err) {
     console.warn("Defer failed:", err?.message || err);
@@ -226,12 +234,36 @@ client.on("interactionCreate", async (interaction) => {
   const formatMoney = (value) =>
     new Intl.NumberFormat("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(value || 0));
 
+  if (interaction.commandName === "completa_ordine") {
+    const creatorLabel = interaction.options.getString("creatore")?.trim() || "N/D";
+    const hasWeapons = items.some((item) => String(item.type).toLowerCase() === "arma");
+    const typeLabel = hasWeapons ? "Carico Armi" : "Ordine";
+    const completedBy = `<@${interaction.user.id}>`;
+
+    const embed = new EmbedBuilder()
+      .setTitle("✅ ORDINE COMPLETATO")
+      .setColor(0x2ecc71)
+      .addFields(
+        { name: "Tipo", value: typeLabel, inline: true },
+        { name: "Creatore", value: creatorLabel, inline: true },
+        { name: "Famiglia", value: order.familyName || "N/D", inline: true },
+        { name: "Totale", value: `$${formatMoney(order.totalDirty)}`, inline: true },
+        { name: "Completato da", value: completedBy, inline: true }
+      )
+      .setFooter({ text: new Date().toLocaleString("it-IT") });
+
+    await interaction.editReply({
+      embeds: [embed],
+      allowedMentions: { users: [interaction.user.id] }
+    });
+    return;
+  }
+
   const filteredItems = items.filter((item) => item.name !== "Spedizione");
 
   const lines = filteredItems
     .map((item) => `${item.name} x${item.quantity} (${formatMoney(item.lineTotal)})`)
     .join("\n");
-
 
   const embed = new EmbedBuilder()
     .setTitle(`Ordine ${order.orderNumber ?? order.id}`)
@@ -249,7 +281,10 @@ client.on("interactionCreate", async (interaction) => {
     )
     .setFooter({ text: `Creato il ${order.createdAt}` });
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({
+    embeds: [embed],
+    allowedMentions: { users: [interaction.user.id] }
+  });
 });
 
 client.login(token);

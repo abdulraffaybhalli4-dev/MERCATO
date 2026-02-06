@@ -3,7 +3,7 @@ import { apiGet, apiSend } from "./api.js";
 
 const emptyForm = { name: "" };
 const categories = [
-  "ARMI BIANCHE",
+  "ARMI BIANCHE", 
   "ARMI LEGGERE",
   "ARMI PESANTI",
   "ACCESSORI",
@@ -18,7 +18,192 @@ function typeFromCategory(category) {
   return "arma";
 }
 
+function Dashboard() {
+  const [admin, setAdmin] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [reportFrom, setReportFrom] = useState("");
+  const [reportTo, setReportTo] = useState("");
+  const [reportData, setReportData] = useState(null);
+  const [resetStatus, setResetStatus] = useState("");
+  const [logs, setLogs] = useState([]);
+
+  useEffect(() => {
+    loadAdmin();
+  }, []);
+
+  async function loadAdmin() {
+    try {
+      const data = await apiGet("/api/admin/me");
+      setAdmin(data.admin);
+    } catch {
+      setAdmin(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function login(e) {
+    e.preventDefault();
+    setError("");
+    try {
+      const data = await apiSend("/api/admin/login", "POST", { username, password });
+      setAdmin(data.admin);
+      setPassword("");
+    } catch {
+      setError("Credenziali non valide");
+    }
+  }
+
+  async function logoutAdmin() {
+    await apiSend("/api/admin/logout", "POST", {});
+    setAdmin(null);
+  }
+
+  async function refreshActiveUsers() {
+    const data = await apiGet("/api/admin/active-users?withinMinutes=10");
+    setActiveUsers(data.users || []);
+  }
+
+  async function resetOrders() {
+    setResetStatus("");
+    await apiSend("/api/admin/reset-orders", "POST", {});
+    setResetStatus("Ordini azzerati");
+  }
+
+  async function runReport() {
+    const data = await apiGet(`/api/admin/reports?from=${reportFrom}&to=${reportTo}`);
+    setReportData(data);
+  }
+
+  async function loadLogs() {
+    const data = await apiGet("/api/admin/logs");
+    setLogs(data.logs || []);
+  }
+
+  if (loading) {
+    return (
+      <div className="auth-screen">
+        <section className="card auth-card">
+          <h2>Dashboard</h2>
+          <p>Caricamento...</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!admin) {
+    return (
+      <div className="auth-screen">
+        <section className="card auth-card">
+          <h2>Dashboard</h2>
+          <p>Accesso amministratore</p>
+          <form className="grid" onSubmit={login}>
+            <input
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+            <input
+              placeholder="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {error && <div className="error-text">{error}</div>}
+            <button type="submit">Login</button>
+          </form>
+          <button className="ghost" onClick={() => (window.location.href = "/")}>Torna al sito</button>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="space-bg" aria-hidden="true"></div>
+      <div id="stars"></div>
+      <div id="stars2"></div>
+      <div id="stars3"></div>
+      <div className="app">
+        <header className="hero">
+          <div>
+            <h1>Dashboard</h1>
+            <p>Gestione ordini, utenti attivi e report.</p>
+          </div>
+          <div className="hero-actions">
+            <button className="ghost" onClick={() => (window.location.href = "/")}>Vai al sito</button>
+            <button onClick={logoutAdmin}>Logout</button>
+          </div>
+        </header>
+
+        <section className="card">
+          <h2>Utenti attivi (ultimi 10 min)</h2>
+          <div className="grid two">
+            <button onClick={refreshActiveUsers}>Aggiorna</button>
+          </div>
+          <div className="list">
+            {activeUsers.length === 0 && <div className="stat">Nessun utente attivo</div>}
+            {activeUsers.map((u) => (
+              <div key={u.id} className="list-item">
+                <strong>{u.username}</strong> <span className="muted">({u.id})</span>
+                <span className="muted"> — ultimo accesso: {u.lastSeen}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card">
+          <h2>Reset ordini</h2>
+          <div className="grid two">
+            <button className="danger" onClick={resetOrders}>Azzera ordini</button>
+            <div className="stat">{resetStatus}</div>
+          </div>
+        </section>
+
+        <section className="card">
+          <h2>Report ordini</h2>
+          <div className="grid three">
+            <input type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} />
+            <input type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} />
+            <button onClick={runReport} disabled={!reportFrom || !reportTo}>Genera</button>
+          </div>
+          {reportData && (
+            <div className="list">
+              <div className="list-item">
+                Totali — Ordini: {reportData.totals.orderCount} | Pulito: {reportData.totals.totalClean} | Sporco: {reportData.totals.totalDirty}
+              </div>
+              {reportData.byFamily.map((row) => (
+                <div key={row.familyId} className="list-item">
+                  {row.familyName}: {row.orderCount} ordini — Pulito {row.totalClean} | Sporco {row.totalDirty}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="card">
+          <h2>Log</h2>
+          <button onClick={loadLogs}>Carica log</button>
+          <div className="list">
+            {logs.length === 0 && <div className="stat">Nessun log disponibile</div>}
+            {logs.map((line, idx) => (
+              <div key={idx} className="list-item">{line}</div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
+  const isDashboard = window.location.pathname.startsWith("/dashboard");
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [families, setFamilies] = useState([]);
@@ -43,8 +228,12 @@ export default function App() {
   const [reportData, setReportData] = useState(null);
 
   useEffect(() => {
+    if (isDashboard) {
+      setAuthLoading(false);
+      return;
+    }
     loadAuth();
-  }, []);
+  }, [isDashboard]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -184,6 +373,10 @@ export default function App() {
     setReportData(data);
   }
 
+  if (isDashboard) {
+    return <Dashboard />;
+  }
+
   if (authLoading) {
     return (
       <div className="auth-screen">
@@ -267,7 +460,10 @@ export default function App() {
         </div>
         <div>
           <div className="stat">Connesso: {authUser.username}</div>
-          <button onClick={logout}>Logout</button>
+          <div className="hero-actions">
+            <button className="ghost" onClick={() => (window.location.href = "/dashboard")}>Dashboard</button>
+            <button onClick={logout}>Logout</button>
+          </div>
         </div>
       </header>
 

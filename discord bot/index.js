@@ -20,6 +20,10 @@ const accessChannelName = (process.env.ACCESS_CHANNEL_NAME || 'access site').toL
 // ===== READY =====
 client.once('ready', () => {
   console.log(`✅ Bot online come ${client.user.tag}`);
+  const guildList = [...client.guilds.cache.values()]
+    .map((g) => `${g.name} (${g.id})`)
+    .join(', ');
+  console.log(`📌 Guilds: ${guildList || 'none'}`);
 });
 
 // ===== INTERACTIONS =====

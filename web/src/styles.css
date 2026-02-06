@@ -274,6 +274,31 @@ button.danger {
 }
 button.danger:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(255, 255, 255, 0.15); }
 
+button.ghost {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+button.ghost:hover {
+  box-shadow: 0 8px 20px rgba(255, 255, 255, 0.12);
+}
+
+.hero-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.muted {
+  color: #a0a0a0;
+  font-size: 0.85rem;
+}
+
+.error-text {
+  color: #ff7b7b;
+  font-weight: 600;
+}
+
 .list {
   display: grid;
   gap: 8px;
